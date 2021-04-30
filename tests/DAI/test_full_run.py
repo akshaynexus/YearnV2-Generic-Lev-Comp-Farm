@@ -14,7 +14,7 @@ import random
 import brownie
 
 
-def test_full_generic(Strategy, web3, chain, cdai, Vault, currency, whale, strategist):
+def test_full_generic(Strategy, web3, chain, cdai, crdai, Vault, currency, whale, strategist):
     # our humble strategist is going to publish both the vault and the strategy
 
     # deploy vault
@@ -27,7 +27,7 @@ def test_full_generic(Strategy, web3, chain, cdai, Vault, currency, whale, strat
     vault.setDepositLimit(deposit_limit, {"from": strategist})
 
     # deploy strategy
-    strategy = strategist.deploy(Strategy, vault, cdai)
+    strategy = strategist.deploy(Strategy, vault, cdai, crdai)
     strategy.setMinCompToSell(0.01 * 1e18, {"from": strategist})
 
     rate_limit = 1_000_000_000 * 1e18

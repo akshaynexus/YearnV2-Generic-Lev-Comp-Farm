@@ -6,7 +6,7 @@ import {BaseStrategy, StrategyParams, VaultAPI} from "@yearnvaults/contracts/Bas
 import {SafeERC20, SafeMath, IERC20, Address} from "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 
-import "./Interfaces/Compound/ComptrollerI.sol";
+import "./Interfaces/Compound/FortressComptrollerI.sol";
 
 interface IUni {
     function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
@@ -36,14 +36,10 @@ contract Strategy is BaseStrategy {
     // @notice emitted when trying to do Flash Loan. flashLoan address is 0x00 when no flash loan used
     event Leverage(uint256 amountRequested, uint256 amountGiven, bool deficit, address flashLoan);
 
-    //Flash Loan Providers
-    address private constant SOLO = 0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e;
-    address private constant AAVE_LENDING = 0x24a42fD28C976A61Df5D00D0599C34c4f90748c8;
-    // ILendingPoolAddressesProvider public addressesProvider;
 
     // Comptroller address for fortress
-    ComptrollerI public constant fortressController = ComptrollerI(0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B);
-
+    FortressComptrollerI public constant fortressController = FortressComptrollerI(0x67340Bd16ee5649A37015138B3393Eb5ad17c195);
+    //Flash Loan Providers
     ComptrollerI public constant creamComptroller = ComptrollerI(0x589DE0F0Ccf905477646599bb3E5C622C84cC0BA);
 
     //Only three tokens we use
@@ -63,26 +59,23 @@ contract Strategy is BaseStrategy {
 
     //To deactivate flash loan provider if needed
     //We have no dydx on BSC Yet,so disable it,we instead use a workaround with cream
-    bool public CreamActive = true;
+    bool public CreamActive;
 
     CTokenWithFlashloan public creamLoanToken;
 
-    constructor(address _vault, address _cToken) public BaseStrategy(_vault) {
+    constructor(address _vault, address _cToken, address _creamLoanToken) public BaseStrategy(_vault) {
         cToken = CErc20I(address(_cToken));
 
+        require(address(want) == cToken.underlying() ,"Wrong ctoken");
         //pre-set approvals
         IERC20(fts).safeApprove(pancakeswapRouter, uint256(-1));
         want.safeApprove(address(cToken), uint256(-1));
-        want.safeApprove(SOLO, uint256(-1));
 
         // You can set these parameters on deployment to whatever you want
         maxReportDelay = 86400; // once per 24 hours
         profitFactor = 100; // multiple before triggering harvest
-
-        _setMarketIdFromTokenAddress();
-
-        // addressesProvider = ILendingPoolAddressesProvider(AAVE_LENDING);
-
+        CreamActive = _creamLoanToken != address(0);
+        creamLoanToken = CTokenWithFlashloan(_creamLoanToken);
         //we do this horrible thing because you can't compare strings in solidity
         require(keccak256(bytes(apiVersion())) == keccak256(bytes(VaultAPI(_vault).apiVersion())), "WRONG VERSION");
     }
@@ -107,8 +100,8 @@ contract Strategy is BaseStrategy {
         minWant = _minWant;
     }
 
-    function updateMarketId() external management {
-        _setMarketIdFromTokenAddress();
+    function updateLoanSource(address _newLoanSource) external management {
+        creamLoanToken = CTokenWithFlashloan(_newLoanSource);
     }
 
     function setCollateralTarget(uint256 _collateralTarget) external management {
@@ -279,7 +272,7 @@ contract Strategy is BaseStrategy {
         }
 
         //fts speed is amount to borrow or deposit (so half the total distribution for want)
-        uint256 distributionPerBlock = fortressController.compSpeeds(address(cToken));
+        uint256 distributionPerBlock = fortressController.fortressSpeeds(address(cToken));
 
         uint256 totalBorrow = cToken.totalBorrows();
 
@@ -364,7 +357,7 @@ contract Strategy is BaseStrategy {
         (uint256 deposits, uint256 borrows) = getLivePosition();
 
         //claim fts accrued
-        _claimComp();
+        claimComp();
         //sell fts
         _disposeOfComp();
 
@@ -580,11 +573,11 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function _claimComp() internal {
+    function claimComp() public {
         CTokenI[] memory tokens = new CTokenI[](1);
         tokens[0] = cToken;
 
-        fortressController.claimComp(address(this), tokens);
+        fortressController.claimFortress(address(this), tokens);
     }
 
     //sell fts function
@@ -779,24 +772,6 @@ contract Strategy is BaseStrategy {
         uint256 totalDebt = _amount.add(_fee);
 
         IERC20(_reserve).safeTransfer(msg.sender, totalDebt);
-    }
-
-    // -- Internal Helper functions -- //
-
-    function _setMarketIdFromTokenAddress() internal {
-        CErc20I[] memory markets = creamComptroller.getAllMarkets();
-
-        address curToken;
-        for (uint256 i = 0; i < markets.length; i++) {
-            curToken = markets[i].underlying();
-
-            if (curToken == address(want)) {
-                creamLoanToken = CTokenWithFlashloan(curToken);
-                return;
-            }
-        }
-
-        revert("No market found for provided token");
     }
 
     modifier management() {

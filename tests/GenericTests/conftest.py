@@ -74,33 +74,35 @@ def rando(accounts):
 # specific addresses
 @pytest.fixture
 def usdc(interface):
-    yield interface.ERC20("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")
+    yield interface.ERC20("0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d")
 
 
 @pytest.fixture
 def dai(interface):
-    yield interface.ERC20("0x6b175474e89094c44da98b954eedeac495271d0f")
+    yield interface.ERC20("0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3")
 
 
 @pytest.fixture
 def weth(interface):
-    yield interface.IWETH("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+    yield interface.IWETH("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")
 
 
 @pytest.fixture
 def cdai(interface):
-    yield interface.CErc20I("0x5d3a536e4d6dbd6114cc1ead35777bab948e3643")
+    yield interface.CErc20I("0x5F30fDDdCf14a0997a52fdb7D7F23b93F0f21998")
 
 
 @pytest.fixture
 def cUsdc(interface):
-    yield interface.CErc20I("0x39AA39c021dfbaE8faC545936693aC917d5E7563")
+    yield interface.CErc20I("0x3ef88D7FDe18Fe966474FE3878b802F678b029bC")
 
 
 @pytest.fixture
 def crUsdc(interface):
-    yield interface.CErc20I("0x44fbeBd2F576670a6C33f6Fc0B00aA8c5753b322")
+    yield interface.CErc20I("0xD83C88DB3A6cA4a32FFf1603b0f7DDce01F5f727")
 
+def crdai(interface):
+    yield interface.CErc20I("0x9095e8d707E40982aFFce41C61c10895157A1B22")
 
 @pytest.fixture(autouse=True)
 def isolation(fn_isolation):
@@ -125,8 +127,8 @@ def Vault(pm):
 
 
 @pytest.fixture
-def strategy(strategist, keeper, vault, Strategy, cdai):
-    strategy = strategist.deploy(Strategy, vault, cdai)
+def strategy(strategist, keeper, vault, Strategy, cdai, crdai):
+    strategy = strategist.deploy(Strategy, vault, cdai, crdai)
     strategy.setKeeper(keeper)
 
     yield strategy

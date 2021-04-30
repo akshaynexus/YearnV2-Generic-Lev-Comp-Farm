@@ -4,9 +4,9 @@ from brownie import Wei, config
 
 # change these fixtures for generic tests
 @pytest.fixture
-def currency(interface):
+def currency(dai):
     # this one is dai:
-    yield interface.ERC20("0x6b175474e89094c44da98b954eedeac495271d0f")
+    yield dai
     # this one is weth:
     # yield interface.ERC20('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2')
 
@@ -34,7 +34,7 @@ def Vault(pm):
 @pytest.fixture
 def weth(interface):
 
-    yield interface.ERC20("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
+    yield interface.ERC20("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")
 
 
 @pytest.fixture
@@ -48,9 +48,9 @@ def whale(accounts, web3, weth, dai, usdc, gov, chain):
     # big binance7 wallet
     # acc = accounts.at('0xBE0eB53F46cd790Cd13851d5EFf43D12404d33E8', force=True)
     # big binance8 wallet
-    acc2 = accounts.at("0xf977814e90da44bfa03b6295a0616a897441acec", force=True)
+    acc2 = accounts.at("0xF977814e90dA44bFA03b6295A0616a897441aceC", force=True)
 
-    acc = accounts.at("0x3f5CE5FBFe3E9af3971dD833D26bA9b5C936f0bE", force=True)
+    acc = accounts.at("0x631Fc1EA2270e98fbD9D92658eCe0F5a269Aa161", force=True)
     usdc.transfer(acc, usdc.balanceOf(acc2), {"from": acc2})
     # lots of weth account
     # if weth transfer fails change to new weth account
@@ -107,12 +107,12 @@ def rando(accounts):
 
 @pytest.fixture
 def dai(interface):
-    yield interface.ERC20("0x6b175474e89094c44da98b954eedeac495271d0f")
+    yield interface.ERC20("0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3")
 
 
 @pytest.fixture
 def usdc(interface):
-    yield interface.ERC20("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")
+    yield interface.ERC20("0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d")
 
 
 # any strategy just deploys base strategy can be used because they have the same interface
@@ -236,7 +236,7 @@ def live_strategy_weth(YearnWethCreamStratV2):
 
 @pytest.fixture
 def dai(interface):
-    yield interface.ERC20("0x6b175474e89094c44da98b954eedeac495271d0f")
+    yield interface.ERC20("0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3")
 
 
 # uniwethwbtc
@@ -257,13 +257,16 @@ def earlyadopter(accounts):
 
 @pytest.fixture
 def comp(interface):
-    yield interface.ERC20("0xc00e94Cb662C3520282E6f5717214004A7f26888")
+    yield interface.ERC20("0x4437743ac02957068995c48E08465E0EE1769fBE")
 
 
 @pytest.fixture
 def cdai(interface):
-    yield interface.CErc20I("0x5d3a536e4d6dbd6114cc1ead35777bab948e3643")
+    yield interface.CErc20I("0x5F30fDDdCf14a0997a52fdb7D7F23b93F0f21998")
 
+@pytest.fixture
+def crdai(interface):
+    yield interface.CErc20I("0x9095e8d707E40982aFFce41C61c10895157A1B22")
 
 # @pytest.fixture(autouse=True)
 # def isolation(fn_isolation):
@@ -312,8 +315,8 @@ def isolation(fn_isolation):
 
 
 @pytest.fixture()
-def strategy(strategist, gov, keeper, vault, Strategy, cdai):
-    strategy = strategist.deploy(Strategy, vault, cdai)
+def strategy(strategist, gov, keeper, vault, Strategy, cdai, crdai):
+    strategy = strategist.deploy(Strategy, vault, cdai, crdai)
     strategy.setKeeper(keeper)
 
     rate_limit = 1_000_000 * 1e18
