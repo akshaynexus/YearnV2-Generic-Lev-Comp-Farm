@@ -3,25 +3,17 @@ pragma solidity ^0.6.12;
 pragma experimental ABIEncoderV2;
 
 import {BaseStrategy, StrategyParams, VaultAPI} from "@yearnvaults/contracts/BaseStrategy.sol";
-
-import "./Interfaces/DyDx/DydxFlashLoanBase.sol";
-import "./Interfaces/DyDx/ICallee.sol";
-
-import "./Interfaces/Aave/ILendingPoolAddressesProvider.sol";
-import "./Interfaces/Aave/ILendingPool.sol";
-
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/math/Math.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 
-import "./Interfaces/Compound/CErc20I.sol";
 import "./Interfaces/Compound/ComptrollerI.sol";
 
 interface IUni{
     function getAmountsOut(
-        uint256 amountIn, 
+        uint256 amountIn,
         address[] calldata path
     ) external view returns (uint256[] memory amounts);
 
@@ -42,7 +34,7 @@ interface IUni{
  *
  ********************* */
 
-contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
+contract Strategy is BaseStrategy {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
@@ -53,18 +45,20 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     //Flash Loan Providers
     address private constant SOLO = 0x1E0447b19BB6EcFdAe1e4AE1694b0C3659614e4e;
     address private constant AAVE_LENDING = 0x24a42fD28C976A61Df5D00D0599C34c4f90748c8;
-    ILendingPoolAddressesProvider public addressesProvider;
+    // ILendingPoolAddressesProvider public addressesProvider;
 
-    // Comptroller address for compound.finance
-    ComptrollerI public constant compound = ComptrollerI(0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B);
+    // Comptroller address for fortress
+    ComptrollerI public constant fortressController = ComptrollerI(0x3d9819210A31b4961b30EF54bE2aeD79B9c9Cd3B);
+
+    ComptrollerI public constant creamComptroller = ComptrollerI(0x589DE0F0Ccf905477646599bb3E5C622C84cC0BA);
 
     //Only three tokens we use
-    address public constant comp = address(0xc00e94Cb662C3520282E6f5717214004A7f26888);
+    address public constant fts = address(0x4437743ac02957068995c48E08465E0EE1769fBE);
     CErc20I public cToken;
     //address public constant DAI = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
 
-    address public constant uniswapRouter = address(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-    address public constant weth = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2);
+    address public constant pancakeswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
+    address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
 
     //Operating variables
     uint256 public collateralTarget = 0.73 ether; // 73%
@@ -74,16 +68,16 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     uint256 public minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
 
     //To deactivate flash loan provider if needed
-    bool public DyDxActive = true;
-    bool public AaveActive = false;
+    //We have no dydx on BSC Yet,so disable it,we instead use a workaround with cream
+    bool public CreamActive = true;
 
-    uint256 public dyDxMarketId;
+    CTokenWithFlashloan public creamLoanToken;
 
     constructor(address _vault, address _cToken) public BaseStrategy(_vault) {
         cToken = CErc20I(address(_cToken));
 
         //pre-set approvals
-        IERC20(comp).safeApprove(uniswapRouter, uint256(-1));
+        IERC20(fts).safeApprove(pancakeswapRouter, uint256(-1));
         want.safeApprove(address(cToken), uint256(-1));
         want.safeApprove(SOLO, uint256(-1));
 
@@ -93,7 +87,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         _setMarketIdFromTokenAddress();
 
-        addressesProvider = ILendingPoolAddressesProvider(AAVE_LENDING);
+        // addressesProvider = ILendingPoolAddressesProvider(AAVE_LENDING);
 
         //we do this horrible thing because you can't compare strings in solidity
         require(keccak256(bytes(apiVersion())) == keccak256(bytes(VaultAPI(_vault).apiVersion())), "WRONG VERSION");
@@ -106,12 +100,9 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     /*
      * Control Functions
      */
-    function setDyDx(bool _dydx) external management {
-        DyDxActive = _dydx;
-    }
 
     function setAave(bool _ave) external management {
-        AaveActive = _ave;
+        CreamActive = _ave;
     }
 
     function setMinCompToSell(uint256 _minCompToSell) external management {
@@ -127,7 +118,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     }
 
     function setCollateralTarget(uint256 _collateralTarget) external management {
-        (, uint256 collateralFactorMantissa, ) = compound.markets(address(cToken));
+        (, uint256 collateralFactorMantissa, ) = fortressController.markets(address(cToken));
         require(collateralFactorMantissa > _collateralTarget, "!dangerous collateral");
         collateralTarget = _collateralTarget;
     }
@@ -143,10 +134,10 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
 
         uint256 _claimableComp = predictCompAccrued();
-        uint256 currentComp = IERC20(comp).balanceOf(address(this));
+        uint256 currentComp = IERC20(fts).balanceOf(address(this));
 
         // Use touch price. it doesnt matter if we are wrong as this is not used for decision making
-        uint256 estimatedWant =  priceCheck(comp, address(want),_claimableComp.add(currentComp));
+        uint256 estimatedWant =  priceCheck(fts, address(want),_claimableComp.add(currentComp));
         uint256 conservativeWant = estimatedWant.mul(9).div(10); //10% pessimist
 
         return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows);
@@ -190,22 +181,22 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
      * NOTE: this call and `tendTrigger` should never return `true` at the same time.
      */
     function harvestTrigger(uint256 gasCost) public override view returns (bool) {
-        
+
         StrategyParams memory params = vault.strategies(address(this));
 
         // Should not trigger if strategy is not activated
         if (params.activation == 0) return false;
 
 
-        uint256 wantGasCost = priceCheck(weth, address(want), gasCost);
-        uint256 compGasCost = priceCheck(weth, comp, gasCost);
+        uint256 wantGasCost = priceCheck(wbnb, address(want), gasCost);
+        uint256 compGasCost = priceCheck(wbnb, fts, gasCost);
 
-        // after enough comp has accrued we want the bot to run
+        // after enough fts has accrued we want the bot to run
         uint256 _claimableComp = predictCompAccrued();
 
         if (_claimableComp > minCompToSell) {
             // check value of COMP in wei
-            if ( _claimableComp.add(IERC20(comp).balanceOf(address(this))) > compGasCost.mul(profitFactor)) {
+            if ( _claimableComp.add(IERC20(fts).balanceOf(address(this))) > compGasCost.mul(profitFactor)) {
                 return true;
             }
         }
@@ -235,18 +226,18 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             return 0;
         }
         address[] memory path;
-        if(start == weth){
+        if(start == wbnb){
             path = new address[](2);
-            path[0] = weth;
+            path[0] = wbnb;
             path[1] = end;
         }else{
             path = new address[](3);
-            path[0] = start; 
-            path[1] = weth; 
+            path[0] = start;
+            path[1] = wbnb;
             path[2] = end;
         }
- 
-        uint256[] memory amounts = IUni(uniswapRouter).getAmountsOut(_amount, path);
+
+        uint256[] memory amounts = IUni(pancakeswapRouter).getAmountsOut(_amount, path);
 
         return amounts[amounts.length - 1];
     }
@@ -260,7 +251,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     //equation. Compound doesn't include compounding for most blocks
     //((deposits*colateralThreshold - borrows) / (borrows*borrowrate - deposits*colateralThreshold*interestrate));
     function getblocksUntilLiquidation() public view returns (uint256) {
-        (, uint256 collateralFactorMantissa, ) = compound.markets(address(cToken));
+        (, uint256 collateralFactorMantissa, ) = fortressController.markets(address(cToken));
 
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
 
@@ -284,16 +275,16 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         }
     }
 
-    // This function makes a prediction on how much comp is accrued
+    // This function makes a prediction on how much fts is accrued
     // It is not 100% accurate as it uses current balances in Compound to predict into the past
     function predictCompAccrued() public view returns (uint256) {
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
         if (deposits == 0) {
-            return 0; // should be impossible to have 0 balance and positive comp accrued
+            return 0; // should be impossible to have 0 balance and positive fts accrued
         }
 
-        //comp speed is amount to borrow or deposit (so half the total distribution for want)
-        uint256 distributionPerBlock = compound.compSpeeds(address(cToken));
+        //fts speed is amount to borrow or deposit (so half the total distribution for want)
+        uint256 distributionPerBlock = fortressController.compSpeeds(address(cToken));
 
         uint256 totalBorrow = cToken.totalBorrows();
 
@@ -305,12 +296,12 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         if(totalSupply > 0){
             blockShareSupply = deposits.mul(distributionPerBlock).div(totalSupply);
         }
-        
+
         uint256 blockShareBorrow = 0;
         if(totalBorrow > 0){
             blockShareBorrow = borrows.mul(distributionPerBlock).div(totalBorrow);
         }
-        
+
         //how much we expect to earn per block
         uint256 blockShare = blockShareSupply.add(blockShareBorrow);
 
@@ -351,9 +342,9 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     /*
      * A core method.
      * Called at beggining of harvest before providing report to owner
-     * 1 - claim accrued comp
+     * 1 - claim accrued fts
      * 2 - if enough to be worth it we sell
-     * 3 - because we lose money on our loans we need to offset profit from comp.
+     * 3 - because we lose money on our loans we need to offset profit from fts.
      */
     function prepareReturn(uint256 _debtOutstanding)
         internal
@@ -371,14 +362,14 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             //no position to harvest
             //but we may have some debt to return
             //it is too expensive to free more debt in this method so we do it in adjust position
-            _debtPayment = Math.min(wantBalance, _debtOutstanding); 
+            _debtPayment = Math.min(wantBalance, _debtOutstanding);
             return (_profit, _loss, _debtPayment);
         }
         (uint256 deposits, uint256 borrows) = getLivePosition();
 
-        //claim comp accrued
+        //claim fts accrued
         _claimComp();
-        //sell comp
+        //sell fts
         _disposeOfComp();
 
         uint256 wantBalance = want.balanceOf(address(this));
@@ -393,7 +384,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             _profit = balance - debt;
 
             if (wantBalance < _profit) {
-                //all reserve is profit                
+                //all reserve is profit
                 _profit = wantBalance;
             } else if (wantBalance > _profit.add(_debtOutstanding)){
                 _debtPayment = _debtOutstanding;
@@ -401,7 +392,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
                 _debtPayment = wantBalance - _profit;
             }
         } else {
-            //we will lose money until we claim comp then we will make money
+            //we will lose money until we claim fts then we will make money
             //this has an unintended side effect of slowly lowering our total debt allowed
             _loss = debt - balance;
             _debtPayment = Math.min(wantBalance, _debtOutstanding);
@@ -425,20 +416,19 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         if(_wantBal < _debtOutstanding){
             //this is graceful withdrawal. dont use backup
             //we use more than 1 because withdrawunderlying causes problems with 1 token due to different decimals
-            if(cToken.balanceOf(address(this)) > 1){ 
+            if(cToken.balanceOf(address(this)) > 1){
                 _withdrawSome(_debtOutstanding - _wantBal, false);
             }
 
             return;
         }
-        
+
         (uint256 position, bool deficit) = _calculateDesiredPosition(_wantBal - _debtOutstanding, true);
-        
+
         //if we are below minimun want change it is not worth doing
         //need to be careful in case this pushes to liquidation
         if (position > minWant) {
             //if dydx is not active we just try our best with basic leverage
-            if (!DyDxActive) {
                 uint i = 0;
                 while(position > 0){
                     position = position.sub(_noFlashLoan(position, deficit));
@@ -446,25 +436,13 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
                         break;
                     }
                     i++;
-                }
-            } else {
-                //if there is huge position to improve we want to do normal leverage. it is quicker
-                if (position > want.balanceOf(SOLO)) {
-                    position = position.sub(_noFlashLoan(position, deficit));
-                }
-
-                //flash loan to position
-                if(position > 0){
-                    doDyDxFlashLoan(deficit, position);
-                }
-
             }
         }
     }
 
     /*************
      * Very important function
-     * Input: amount we want to withdraw and whether we are happy to pay extra for Aave.
+     * Input: amount we want to withdraw and whether we are happy to pay extra for Cream.
      *       cannot be more than we have
      * Returns amount we were able to withdraw. notall if user has some balance left
      *
@@ -475,15 +453,11 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         //If there is no deficit we dont need to adjust position
         if (deficit) {
-            //we do a flash loan to give us a big gap. from here on out it is cheaper to use normal deleverage. Use Aave for extremely large loans
-            if (DyDxActive) {
-                position = position.sub(doDyDxFlashLoan(deficit, position));
-            }
 
             // Will decrease number of interactions using aave as backup
             // because of fee we only use in emergency
-            if (position > 0 && AaveActive && _useBackup) {
-                position = position.sub(doAaveFlashLoan(deficit, position));
+            if (position > 0 && CreamActive && _useBackup) {
+                position = position.sub(doCreamFlashLoan(deficit, position));
             }
 
             uint8 i = 0;
@@ -519,8 +493,8 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             cToken.redeemUnderlying(_amount);
         }
 
-        //let's sell some comp if we have more than needed
-        //flash loan would have sent us comp if we had some accrued so we don't need to call claim comp
+        //let's sell some fts if we have more than needed
+        //flash loan would have sent us fts if we had some accrued so we don't need to call claim fts
         _disposeOfComp();
     }
 
@@ -547,7 +521,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         uint256 desiredSupply = 0;
         if (dep) {
             desiredSupply = unwoundDeposit.add(balance);
-        } else { 
+        } else {
             if(balance > unwoundDeposit) balance = unwoundDeposit;
             desiredSupply = unwoundDeposit.sub(balance);
         }
@@ -595,12 +569,12 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             (uint256 deposits, uint256 borrows) = getLivePosition();
 
             //1 token causes rounding error with withdrawUnderlying
-            if(cToken.balanceOf(address(this)) > 1){ 
+            if(cToken.balanceOf(address(this)) > 1){
                 _withdrawSome(deposits.sub(borrows), true);
             }
 
             _amountFreed = Math.min(_amountNeeded, want.balanceOf(address(this)));
-           
+
         } else {
             if (_balance < _amountNeeded) {
                 _withdrawSome(_amountNeeded.sub(_balance), true);
@@ -617,20 +591,20 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         CTokenI[] memory tokens = new CTokenI[](1);
         tokens[0] = cToken;
 
-        compound.claimComp(address(this), tokens);
+        fortressController.claimComp(address(this), tokens);
     }
 
-    //sell comp function
+    //sell fts function
     function _disposeOfComp() internal {
-        uint256 _comp = IERC20(comp).balanceOf(address(this));
+        uint256 _comp = IERC20(fts).balanceOf(address(this));
 
         if (_comp > minCompToSell) {
             address[] memory path = new address[](3);
-            path[0] = comp;
-            path[1] = weth;
+            path[0] = fts;
+            path[1] = wbnb;
             path[2] = address(want);
 
-            IUni(uniswapRouter).swapExactTokensForTokens(_comp, uint256(0), path, address(this), now);
+            IUni(pancakeswapRouter).swapExactTokensForTokens(_comp, uint256(0), path, address(this), now);
         }
     }
 
@@ -644,7 +618,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         require(borrowBalance == 0, "DELEVERAGE_FIRST");
 
-        IERC20 _comp = IERC20(comp);
+        IERC20 _comp = IERC20(fts);
         uint _compB = _comp.balanceOf(address(this));
         if(_compB > 0){
             _comp.safeTransfer(_newStrategy, _compB);
@@ -663,7 +637,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
             return 0;
         }
 
-        (, uint256 collateralFactorMantissa, ) = compound.markets(address(cToken));
+        (, uint256 collateralFactorMantissa, ) = fortressController.markets(address(cToken));
 
         if (deficit) {
             amount = _normalDeleverage(max, lent, borrowed, collateralFactorMantissa);
@@ -751,7 +725,7 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
 
         //want is protected automatically
         address[] memory protected = new address[](2);
-        protected[0] = comp;
+        protected[0] = fts;
         protected[1] = address(cToken);
         return protected;
     }
@@ -759,45 +733,6 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
     /******************
      * Flash loan stuff
      ****************/
-
-    // Flash loan DXDY
-    // amount desired is how much we are willing for position to change
-    function doDyDxFlashLoan(bool deficit, uint256 amountDesired) internal returns (uint256) {
-        uint256 amount = amountDesired;
-        ISoloMargin solo = ISoloMargin(SOLO);
-        
-        // Not enough want in DyDx. So we take all we can
-        uint256 amountInSolo = want.balanceOf(SOLO);
-
-        if (amountInSolo < amount) {
-            amount = amountInSolo;
-        }
-
-        uint256 repayAmount = amount.add(2); // we need to overcollateralise on way back
-
-        bytes memory data = abi.encode(deficit, amount, repayAmount);
-
-        // 1. Withdraw $
-        // 2. Call callFunction(...)
-        // 3. Deposit back $
-        Actions.ActionArgs[] memory operations = new Actions.ActionArgs[](3);
-
-        operations[0] = _getWithdrawAction(dyDxMarketId, amount);
-        operations[1] = _getCallAction(
-            // Encode custom data for callFunction
-            data
-        );
-        operations[2] = _getDepositAction(dyDxMarketId, repayAmount);
-
-        Account.Info[] memory accountInfos = new Account.Info[](1);
-        accountInfos[0] = _getAccountInfo();
-
-        solo.operate(accountInfos, operations);
-
-        emit Leverage(amountDesired, amount, deficit, SOLO);
-
-        return amount;
-    }
 
     //returns our current collateralisation ratio. Should be compared with collateralTarget
     function storedCollateralisation() public view returns (uint256 collat) {
@@ -808,30 +743,14 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         collat = uint256(1e18).mul(borrow).div(lend);
     }
 
-    //DyDx calls this function after doing flash loan
-    function callFunction(
-        address sender,
-        Account.Info memory account,
-        bytes memory data
-    ) public override {
-        (bool deficit, uint256 amount, uint256 repayAmount) = abi.decode(data, (bool, uint256, uint256));
-        require(msg.sender == SOLO, "NOT_SOLO");
-
-        _loanLogic(deficit, amount, repayAmount);
-       
-    }
-
     bool internal awaitingFlash = false;
 
-    function doAaveFlashLoan(bool deficit, uint256 _flashBackUpAmount) internal returns (uint256 amount) {
+    function doCreamFlashLoan(bool deficit, uint256 _flashBackUpAmount) internal returns (uint256 amount) {
         //we do not want to do aave flash loans for leveraging up. Fee could put us into liquidation
         if (!deficit) {
             return _flashBackUpAmount;
         }
-
-        ILendingPool lendingPool = ILendingPool(addressesProvider.getLendingPool());
-
-        uint256 availableLiquidity = want.balanceOf(address(0x3dfd23A6c5E8BbcFc9581d2E864a68feb6a076d3));
+        uint256 availableLiquidity = want.balanceOf(address(creamLoanToken));
 
         if (availableLiquidity < _flashBackUpAmount) {
             amount = availableLiquidity;
@@ -844,14 +763,15 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         //anyone can call aave flash loan to us. (for some reason. grrr)
         awaitingFlash = true;
 
-        lendingPool.flashLoan(address(this), address(want), amount, data);
+        creamLoanToken.flashLoan(address(this), amount, data);
 
         awaitingFlash = false;
 
-        emit Leverage(_flashBackUpAmount, amount, deficit, AAVE_LENDING);
+        emit Leverage(_flashBackUpAmount, amount, deficit, address(creamLoanToken));
+
     }
 
-    //Aave calls this function after doing flash loan
+    //Cream calls this function after doing flash loan
     function executeOperation(
         address _reserve,
         uint256 _amount,
@@ -859,36 +779,33 @@ contract Strategy is BaseStrategy, DydxFlashloanBase, ICallee {
         bytes calldata _params
     ) external {
         (bool deficit, uint256 amount) = abi.decode(_params, (bool, uint256));
-        require(msg.sender == addressesProvider.getLendingPool(), "NOT_AAVE");
+        require(msg.sender == address(creamLoanToken), "NOT_CREAM");
         require(awaitingFlash, "Malicious");
 
         _loanLogic(deficit, amount, amount.add(_fee));
 
-        // return the flash loan plus Aave's flash loan fee back to the lending pool
+        // return the flash loan plus Cream's flash loan fee back to the lending pool
         uint256 totalDebt = _amount.add(_fee);
 
-        address core = addressesProvider.getLendingPoolCore();
-        IERC20(_reserve).safeTransfer(core, totalDebt);
+        IERC20(_reserve).safeTransfer(msg.sender, totalDebt);
     }
 
         // -- Internal Helper functions -- //
 
     function _setMarketIdFromTokenAddress() internal {
-        ISoloMargin solo = ISoloMargin(SOLO);
-
-        uint256 numMarkets = solo.getNumMarkets();
+        CErc20I[] memory markets = creamComptroller.getAllMarkets();
 
         address curToken;
-        for (uint256 i = 0; i < numMarkets; i++) {
-            curToken = solo.getMarketTokenAddress(i);
+        for (uint256 i = 0; i < markets.length; i++) {
+            curToken = markets[i].underlying();
 
             if (curToken == address(want)) {
-                dyDxMarketId = i;
+                creamLoanToken = CTokenWithFlashloan(curToken);
                 return;
             }
         }
 
-        revert("No marketId found for provided token");
+        revert("No market found for provided token");
     }
 
     modifier management(){
