@@ -2,9 +2,12 @@ pragma solidity >=0.5.0;
 pragma experimental ABIEncoderV2;
 
 import "./CTokenWithFlashloan.sol";
+
 interface ComptrollerI {
     function enterMarkets(address[] calldata cTokens) external returns (uint256[] memory);
+
     function getAllMarkets() external view returns (CErc20I[] memory);
+
     function exitMarket(address cToken) external returns (uint256);
 
     /*** Policy Hooks ***/

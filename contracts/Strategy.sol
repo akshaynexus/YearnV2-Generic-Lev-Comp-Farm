@@ -8,11 +8,8 @@ import "@openzeppelin/contracts/math/Math.sol";
 
 import "./Interfaces/Compound/ComptrollerI.sol";
 
-interface IUni{
-    function getAmountsOut(
-        uint256 amountIn,
-        address[] calldata path
-    ) external view returns (uint256[] memory amounts);
+interface IUni {
+    function getAmountsOut(uint256 amountIn, address[] calldata path) external view returns (uint256[] memory amounts);
 
     function swapExactTokensForTokens(
         uint256 amountIn,
@@ -90,7 +87,7 @@ contract Strategy is BaseStrategy {
         require(keccak256(bytes(apiVersion())) == keccak256(bytes(VaultAPI(_vault).apiVersion())), "WRONG VERSION");
     }
 
-    function name() external override view returns (string memory){
+    function name() external view override returns (string memory) {
         return "StrategyGenericLevCompFarm";
     }
 
@@ -127,14 +124,14 @@ contract Strategy is BaseStrategy {
      * An accurate estimate for the total amount of assets (principle + return)
      * that this strategy is currently managing, denominated in terms of want tokens.
      */
-    function estimatedTotalAssets() public override view returns (uint256) {
+    function estimatedTotalAssets() public view override returns (uint256) {
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
 
         uint256 _claimableComp = predictCompAccrued();
         uint256 currentComp = IERC20(fts).balanceOf(address(this));
 
         // Use touch price. it doesnt matter if we are wrong as this is not used for decision making
-        uint256 estimatedWant =  priceCheck(fts, address(want),_claimableComp.add(currentComp));
+        uint256 estimatedWant = priceCheck(fts, address(want), _claimableComp.add(currentComp));
         uint256 conservativeWant = estimatedWant.mul(9).div(10); //10% pessimist
 
         return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows);
@@ -159,7 +156,7 @@ contract Strategy is BaseStrategy {
      * NOTE: this call and `harvestTrigger` should never return `true` at the same time.
      * tendTrigger should be called with same gasCost as harvestTrigger
      */
-    function tendTrigger(uint256 gasCost) public override view returns (bool) {
+    function tendTrigger(uint256 gasCost) public view override returns (bool) {
         if (harvestTrigger(gasCost)) {
             //harvest takes priority
             return false;
@@ -177,13 +174,11 @@ contract Strategy is BaseStrategy {
      *
      * NOTE: this call and `tendTrigger` should never return `true` at the same time.
      */
-    function harvestTrigger(uint256 gasCost) public override view returns (bool) {
-
+    function harvestTrigger(uint256 gasCost) public view override returns (bool) {
         StrategyParams memory params = vault.strategies(address(this));
 
         // Should not trigger if strategy is not activated
         if (params.activation == 0) return false;
-
 
         uint256 wantGasCost = priceCheck(wbnb, address(want), gasCost);
         uint256 compGasCost = priceCheck(wbnb, fts, gasCost);
@@ -193,11 +188,10 @@ contract Strategy is BaseStrategy {
 
         if (_claimableComp > minCompToSell) {
             // check value of COMP in wei
-            if ( _claimableComp.add(IERC20(fts).balanceOf(address(this))) > compGasCost.mul(profitFactor)) {
+            if (_claimableComp.add(IERC20(fts).balanceOf(address(this))) > compGasCost.mul(profitFactor)) {
                 return true;
             }
         }
-
 
         // Should trigger if hadn't been called in a while
         if (block.timestamp.sub(params.lastReport) >= maxReportDelay) return true;
@@ -218,16 +212,20 @@ contract Strategy is BaseStrategy {
     }
 
     //WARNING. manipulatable and simple routing. Only use for safe functions
-    function priceCheck(address start, address end, uint256 _amount) public view returns (uint256) {
+    function priceCheck(
+        address start,
+        address end,
+        uint256 _amount
+    ) public view returns (uint256) {
         if (_amount == 0) {
             return 0;
         }
         address[] memory path;
-        if(start == wbnb){
+        if (start == wbnb) {
             path = new address[](2);
             path[0] = wbnb;
             path[1] = end;
-        }else{
+        } else {
             path = new address[](3);
             path[0] = start;
             path[1] = wbnb;
@@ -290,12 +288,12 @@ contract Strategy is BaseStrategy {
         uint256 totalSupply = totalSupplyCtoken.mul(cToken.exchangeRateStored()).div(1e18);
 
         uint256 blockShareSupply = 0;
-        if(totalSupply > 0){
+        if (totalSupply > 0) {
             blockShareSupply = deposits.mul(distributionPerBlock).div(totalSupply);
         }
 
         uint256 blockShareBorrow = 0;
-        if(totalBorrow > 0){
+        if (totalBorrow > 0) {
             blockShareBorrow = borrows.mul(distributionPerBlock).div(totalBorrow);
         }
 
@@ -304,7 +302,7 @@ contract Strategy is BaseStrategy {
 
         //last time we ran harvest
         uint256 lastReport = vault.strategies(address(this)).lastReport;
-        uint256 blocksSinceLast= (block.timestamp.sub(lastReport)).div(13); //roughly 13 seconds per block
+        uint256 blocksSinceLast = (block.timestamp.sub(lastReport)).div(13); //roughly 13 seconds per block
 
         return blocksSinceLast.mul(blockShare);
     }
@@ -350,7 +348,8 @@ contract Strategy is BaseStrategy {
             uint256 _profit,
             uint256 _loss,
             uint256 _debtPayment
-        ) {
+        )
+    {
         _profit = 0;
         _loss = 0; //for clarity. also reduces bytesize
 
@@ -383,9 +382,9 @@ contract Strategy is BaseStrategy {
             if (wantBalance < _profit) {
                 //all reserve is profit
                 _profit = wantBalance;
-            } else if (wantBalance > _profit.add(_debtOutstanding)){
+            } else if (wantBalance > _profit.add(_debtOutstanding)) {
                 _debtPayment = _debtOutstanding;
-            }else{
+            } else {
                 _debtPayment = wantBalance - _profit;
             }
         } else {
@@ -410,10 +409,10 @@ contract Strategy is BaseStrategy {
 
         //we are spending all our cash unless we have debt outstanding
         uint256 _wantBal = want.balanceOf(address(this));
-        if(_wantBal < _debtOutstanding){
+        if (_wantBal < _debtOutstanding) {
             //this is graceful withdrawal. dont use backup
             //we use more than 1 because withdrawunderlying causes problems with 1 token due to different decimals
-            if(cToken.balanceOf(address(this)) > 1){
+            if (cToken.balanceOf(address(this)) > 1) {
                 _withdrawSome(_debtOutstanding - _wantBal, false);
             }
 
@@ -426,13 +425,13 @@ contract Strategy is BaseStrategy {
         //need to be careful in case this pushes to liquidation
         if (position > minWant) {
             //if dydx is not active we just try our best with basic leverage
-                uint i = 0;
-                while(position > 0){
-                    position = position.sub(_noFlashLoan(position, deficit));
-                    if(i >= 6){
-                        break;
-                    }
-                    i++;
+            uint256 i = 0;
+            while (position > 0) {
+                position = position.sub(_noFlashLoan(position, deficit));
+                if (i >= 6) {
+                    break;
+                }
+                i++;
             }
         }
     }
@@ -450,7 +449,6 @@ contract Strategy is BaseStrategy {
 
         //If there is no deficit we dont need to adjust position
         if (deficit) {
-
             // Will decrease number of interactions using aave as backup
             // because of fee we only use in emergency
             if (position > 0 && CreamActive && _useBackup) {
@@ -479,7 +477,7 @@ contract Strategy is BaseStrategy {
         (uint256 depositBalance, uint256 borrowBalance) = getCurrentPosition();
 
         uint256 AmountNeeded = 0;
-        if(collateralTarget > 0){
+        if (collateralTarget > 0) {
             AmountNeeded = borrowBalance.mul(1e18).div(collateralTarget);
         }
         uint256 redeemable = depositBalance.sub(AmountNeeded);
@@ -519,7 +517,7 @@ contract Strategy is BaseStrategy {
         if (dep) {
             desiredSupply = unwoundDeposit.add(balance);
         } else {
-            if(balance > unwoundDeposit) balance = unwoundDeposit;
+            if (balance > unwoundDeposit) balance = unwoundDeposit;
             desiredSupply = unwoundDeposit.sub(balance);
         }
 
@@ -555,30 +553,28 @@ contract Strategy is BaseStrategy {
 
         uint256 debtOutstanding = vault.debtOutstanding();
 
-        if(debtOutstanding > assets){
+        if (debtOutstanding > assets) {
             _loss = debtOutstanding - assets;
         }
 
         if (assets < _amountNeeded) {
-
             //if we cant afford to withdraw we take all we can
             //withdraw all we can
             (uint256 deposits, uint256 borrows) = getLivePosition();
 
             //1 token causes rounding error with withdrawUnderlying
-            if(cToken.balanceOf(address(this)) > 1){
+            if (cToken.balanceOf(address(this)) > 1) {
                 _withdrawSome(deposits.sub(borrows), true);
             }
 
             _amountFreed = Math.min(_amountNeeded, want.balanceOf(address(this)));
-
         } else {
             if (_balance < _amountNeeded) {
                 _withdrawSome(_amountNeeded.sub(_balance), true);
 
                 //overflow error if we return more than asked for
                 _amountFreed = Math.min(_amountNeeded, want.balanceOf(address(this)));
-            }else{
+            } else {
                 _amountFreed = _amountNeeded;
             }
         }
@@ -616,8 +612,8 @@ contract Strategy is BaseStrategy {
         require(borrowBalance == 0, "DELEVERAGE_FIRST");
 
         IERC20 _comp = IERC20(fts);
-        uint _compB = _comp.balanceOf(address(this));
-        if(_compB > 0){
+        uint256 _compB = _comp.balanceOf(address(this));
+        if (_compB > 0) {
             _comp.safeTransfer(_newStrategy, _compB);
         }
     }
@@ -655,7 +651,7 @@ contract Strategy is BaseStrategy {
         uint256 theoreticalLent = 0;
 
         //collat ration should never be 0. if it is something is very wrong... but just incase
-        if(collatRatio != 0){
+        if (collatRatio != 0) {
             theoreticalLent = borrowed.mul(1e18).div(collatRatio);
         }
 
@@ -718,8 +714,7 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    function protectedTokens() internal override view returns (address[] memory) {
-
+    function protectedTokens() internal view override returns (address[] memory) {
         //want is protected automatically
         address[] memory protected = new address[](2);
         protected[0] = fts;
@@ -765,7 +760,6 @@ contract Strategy is BaseStrategy {
         awaitingFlash = false;
 
         emit Leverage(_flashBackUpAmount, amount, deficit, address(creamLoanToken));
-
     }
 
     //Cream calls this function after doing flash loan
@@ -787,7 +781,7 @@ contract Strategy is BaseStrategy {
         IERC20(_reserve).safeTransfer(msg.sender, totalDebt);
     }
 
-        // -- Internal Helper functions -- //
+    // -- Internal Helper functions -- //
 
     function _setMarketIdFromTokenAddress() internal {
         CErc20I[] memory markets = creamComptroller.getAllMarkets();
@@ -805,7 +799,7 @@ contract Strategy is BaseStrategy {
         revert("No market found for provided token");
     }
 
-    modifier management(){
+    modifier management() {
         require(msg.sender == governance() || msg.sender == strategist, "!management");
         _;
     }
