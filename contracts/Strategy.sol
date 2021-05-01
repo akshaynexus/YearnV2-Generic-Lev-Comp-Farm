@@ -51,7 +51,7 @@ contract Strategy is BaseStrategy {
     address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
 
     //Operating variables
-    uint256 public collateralTarget = 0.73 ether; // 73%
+    uint256 public collateralTarget = 0.57 ether; // 57%
     uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
 
     uint256 public minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero

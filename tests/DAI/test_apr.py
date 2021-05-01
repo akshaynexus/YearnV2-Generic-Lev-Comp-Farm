@@ -80,7 +80,7 @@ def test_getting_too_close_to_liq(
 
     stateOfStrat(largerunningstrategy, dai, comp)
     stateOfVault(vault, largerunningstrategy)
-    largerunningstrategy.setCollateralTarget(Wei("0.7498 ether"), {"from": gov})
+    largerunningstrategy.setCollateralTarget(Wei("0.5498 ether"), {"from": gov})
     deposit(Wei("1000 ether"), whale, dai, vault)
 
     balanceBefore = vault.totalAssets()
@@ -111,7 +111,7 @@ def test_getting_too_close_to_liq(
 
     largerunningstrategy.tend({"from": gov})
 
-    largerunningstrategy.setCollateralTarget(Wei("0.73 ether"), {"from": gov})
+    largerunningstrategy.setCollateralTarget(Wei("0.53 ether"), {"from": gov})
     assert largerunningstrategy.tendTrigger(1e18) == False
     largerunningstrategy.tend({"from": gov})
     assertCollateralRatio(largerunningstrategy)

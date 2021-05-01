@@ -33,7 +33,7 @@ def test_full_generic(Strategy, web3, chain, cdai, crdai, Vault, currency, whale
     rate_limit = 1_000_000_000 * 1e18
 
     debt_ratio = 9_500  # 100%
-    vault.addStrategy(strategy, debt_ratio, rate_limit, 1000, {"from": strategist})
+    vault.addStrategy(strategy, debt_ratio, 0, rate_limit, 1000, {"from": strategist})
 
     genericStateOfStrat(strategy, currency, vault)
     genericStateOfVault(vault, currency)
