@@ -52,7 +52,9 @@ contract Strategy is BaseStrategy {
 
     //Operating variables
     uint256 public collateralTarget = 0.57 ether; // 57%
-    uint256 public blocksToLiquidationDangerZone = 46500; // 7 days =  60*60*24*7/13
+
+    //This is calculated with avg 3 Second blocktime on BSC
+    uint256 public blocksToLiquidationDangerZone = 201600; // 7 days =  60*60*24*7/3
 
     uint256 public minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero
     uint256 public minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
@@ -757,6 +759,7 @@ contract Strategy is BaseStrategy {
 
     //Cream calls this function after doing flash loan
     function executeOperation(
+        address _sender,
         address _reserve,
         uint256 _amount,
         uint256 _fee,
