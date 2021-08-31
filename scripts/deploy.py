@@ -12,6 +12,7 @@ IVaultRegistry = interface.IVaultRegistry
 WANT_TOKEN = "0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56"
 REGISTRY = "0x0566aea0479a837ced6c605aae81bcba18596798"
 
+
 def get_address(msg: str) -> str:
     while True:
         val = input(msg)
@@ -62,4 +63,4 @@ def main():
     fbusd = "0x8BB0d002bAc7F1845cB2F14fe3D6Aae1D1601e29"
     crBUSD = "0x2Bc4eb013DDee29D37920938B96d353171289B7C"
 
-    strategy = Strategy.deploy(vault,fbusd, crBUSD, {"from": dev},publish_source=True)
+    strategy = Strategy.deploy(vault, fbusd, crBUSD, {"from": dev}, publish_source=True)

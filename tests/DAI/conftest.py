@@ -1,6 +1,15 @@
 import pytest
 from brownie import Wei, config
-from tests.commonconf import daiAddr, wethAddr, usdcAddr, compAddr, crDaiAddr, cdaiAddr, usdcAccAddr, daiAccAddr
+from tests.commonconf import (
+    daiAddr,
+    wethAddr,
+    usdcAddr,
+    compAddr,
+    crDaiAddr,
+    cdaiAddr,
+    usdcAccAddr,
+    daiAccAddr,
+)
 
 # change these fixtures for generic tests
 @pytest.fixture
@@ -11,14 +20,7 @@ def currency(dai):
 @pytest.fixture
 def vault(gov, rewards, guardian, currency, Vault):
     vault = gov.deploy(Vault)
-    vault.initialize(
-        currency,
-        gov,
-        rewards,
-        "",
-        "",
-        guardian
-    )
+    vault.initialize(currency, gov, rewards, "", "", guardian)
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
 
     yield vault
@@ -267,9 +269,11 @@ def comp(interface):
 def cdai(interface):
     yield interface.CErc20I(cdaiAddr)
 
+
 @pytest.fixture
 def crdai(interface):
     yield interface.CErc20I(crDaiAddr)
+
 
 # @pytest.fixture(autouse=True)
 # def isolation(fn_isolation):
@@ -289,11 +293,9 @@ def live_gov(accounts):
     yield accounts.at("0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52", force=True)
 
 
-
 @pytest.fixture
 def rando(accounts):
     yield accounts[9]
-
 
 
 @pytest.fixture(autouse=True)
@@ -317,7 +319,7 @@ def strategy(strategist, gov, keeper, vault, Strategy, cdai, crdai):
 @pytest.fixture()
 def largerunningstrategy(gov, strategy, dai, vault, whale):
 
-    amount = dai.balanceOf(whale) - Wei('1000 ether')
+    amount = dai.balanceOf(whale) - Wei("1000 ether")
     dai.approve(vault, amount, {"from": whale})
     vault.deposit(amount, {"from": whale})
 

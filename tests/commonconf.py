@@ -1,18 +1,18 @@
-#Asset addresses
+# Asset addresses
 daiAddr = "0x8D11eC38a3EB5E956B052f67Da8Bdc9bef8Abf3E"
 usdcAddr = "0x04068da6c83afcfa0e13ba15a6696662335d5b75"
 wethAddr = "0x21be370d5312f44cb42ce377bc9b8a0cef1a4c83"
 compAddr = "0xe0654C8e6fd4D733349ac7E09f6f23DA256bF475"
 
-#Scream ctokens
+# Scream ctokens
 cdaiAddr = "0x8D9AED9882b4953a0c9fa920168fa1FDfA0eBE75"
-cUSDCAddr= "0xE45Ac34E528907d0A0239ab5Db507688070B20bf"
+cUSDCAddr = "0xE45Ac34E528907d0A0239ab5Db507688070B20bf"
 
-#Cream ctokens
-crUSDCAddr= "0x328A7b4d538A2b3942653a9983fdA3C12c571141"
+# Cream ctokens
+crUSDCAddr = "0x328A7b4d538A2b3942653a9983fdA3C12c571141"
 crDaiAddr = "0x04c762a5dF2Fa02FE868F25359E0C259fB811CfE"
 
-#Whale accs
-daiAccAddr= "0x27e611fd27b276acbd5ffd632e5eaebec9761e40"
+# Whale accs
+daiAccAddr = "0x27e611fd27b276acbd5ffd632e5eaebec9761e40"
 WethAccAddr = "0x3bfC4807c49250b7D966018EE596fd9D5C677e3D"
 usdcAccAddr = "0xb6E825727DaE1e3886639FAa29bAcf623E8Ed91E"

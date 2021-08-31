@@ -2,7 +2,17 @@ import pytest
 from brownie import Wei, config
 
 
-from tests.commonconf import daiAddr, wethAddr, usdcAddr, cdaiAddr, cUSDCAddr, crUSDCAddr, crDaiAddr, daiAccAddr, WethAccAddr
+from tests.commonconf import (
+    daiAddr,
+    wethAddr,
+    usdcAddr,
+    cdaiAddr,
+    cUSDCAddr,
+    crUSDCAddr,
+    crDaiAddr,
+    daiAccAddr,
+    WethAccAddr,
+)
 
 
 # change these fixtures for generic tests
@@ -104,9 +114,11 @@ def cUsdc(interface):
 def crUsdc(interface):
     yield interface.CErc20I(crUSDCAddr)
 
+
 @pytest.fixture
 def crdai(interface):
     yield interface.CErc20I(crDaiAddr)
+
 
 @pytest.fixture(autouse=True)
 def isolation(fn_isolation):
@@ -121,14 +133,7 @@ def isolation(fn_isolation):
 @pytest.fixture
 def vault(Vault, gov, rewards, guardian, currency, pm):
     vault = gov.deploy(Vault)
-    vault.initialize(
-        currency,
-        gov,
-        rewards,
-        "",
-        "",
-        guardian
-    )
+    vault.initialize(currency, gov, rewards, "", "", guardian)
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
 
     yield vault

@@ -14,7 +14,9 @@ import random
 import brownie
 
 
-def test_full_generic(Strategy, web3, chain, cdai, crdai, Vault, currency, whale, strategist):
+def test_full_generic(
+    Strategy, web3, chain, cdai, crdai, Vault, currency, whale, strategist
+):
     # our humble strategist is going to publish both the vault and the strategy
 
     # deploy vault
