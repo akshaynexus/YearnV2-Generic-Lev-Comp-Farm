@@ -2,9 +2,12 @@ import pytest
 from brownie import Wei, config
 
 
+from tests.commonconf import daiAddr, wethAddr, usdcAddr, cdaiAddr, cUSDCAddr, crUSDCAddr, crDaiAddr, daiAccAddr, WethAccAddr
+
+
 # change these fixtures for generic tests
 @pytest.fixture
-def currency(dai, usdc, weth):
+def currency(dai):
     yield dai
 
 
@@ -16,20 +19,20 @@ def isolation(fn_isolation):
 @pytest.fixture
 def whale(accounts, web3, weth, dai, gov, chain):
     # big binance7 wallet
-    acc = accounts.at("0xBE0eB53F46cd790Cd13851d5EFf43D12404d33E8", force=True)
+    daiAcc = accounts.at(daiAccAddr, force=True)
     # big binance8 wallet
-    # acc = accounts.at('0xf977814e90da44bfa03b6295a0616a897441acec', force=True)
+    # daiAcc = accounts.at('0xf977814e90da44bfa03b6295a0616a897441acec', force=True)
 
     # lots of weth account
-    wethAcc = accounts.at("0x767Ecb395def19Ab8d1b2FCc89B3DDfBeD28fD6b", force=True)
+    wethAcc = accounts.at(WethAccAddr, force=True)
 
-    weth.transfer(acc, weth.balanceOf(wethAcc), {"from": wethAcc})
+    weth.transfer(daiAcc, weth.balanceOf(wethAcc), {"from": wethAcc})
 
-    weth.transfer(gov, Wei("100 ether"), {"from": acc})
-    dai.transfer(gov, Wei("10000 ether"), {"from": acc})
+    weth.transfer(gov, Wei("100 ether"), {"from": daiAcc})
+    dai.transfer(gov, Wei("10000 ether"), {"from": daiAcc})
 
-    assert weth.balanceOf(acc) > 0
-    yield acc
+    assert weth.balanceOf(daiAcc) > 0
+    yield daiAcc
 
 
 @pytest.fixture()
@@ -74,35 +77,36 @@ def rando(accounts):
 # specific addresses
 @pytest.fixture
 def usdc(interface):
-    yield interface.ERC20("0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d")
+    yield interface.ERC20(usdcAddr)
 
 
 @pytest.fixture
 def dai(interface):
-    yield interface.ERC20("0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3")
+    yield interface.ERC20(daiAddr)
 
 
 @pytest.fixture
 def weth(interface):
-    yield interface.IWETH("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")
+    yield interface.IWETH(wethAddr)
 
 
 @pytest.fixture
 def cdai(interface):
-    yield interface.CErc20I("0x5F30fDDdCf14a0997a52fdb7D7F23b93F0f21998")
+    yield interface.CErc20I(cdaiAddr)
 
 
 @pytest.fixture
 def cUsdc(interface):
-    yield interface.CErc20I("0x3ef88D7FDe18Fe966474FE3878b802F678b029bC")
+    yield interface.CErc20I(cUSDCAddr)
 
 
 @pytest.fixture
 def crUsdc(interface):
-    yield interface.CErc20I("0xD83C88DB3A6cA4a32FFf1603b0f7DDce01F5f727")
+    yield interface.CErc20I(crUSDCAddr)
 
+@pytest.fixture
 def crdai(interface):
-    yield interface.CErc20I("0x9095e8d707E40982aFFce41C61c10895157A1B22")
+    yield interface.CErc20I(crDaiAddr)
 
 @pytest.fixture(autouse=True)
 def isolation(fn_isolation):
@@ -115,9 +119,18 @@ def isolation(fn_isolation):
 
 
 @pytest.fixture
-def vault(gov, rewards, guardian, currency, pm):
-    Vault = pm(config["dependencies"][0]).Vault
-    vault = guardian.deploy(Vault, currency, gov, rewards, "", "")
+def vault(Vault, gov, rewards, guardian, currency, pm):
+    vault = gov.deploy(Vault)
+    vault.initialize(
+        currency,
+        gov,
+        rewards,
+        "",
+        "",
+        guardian
+    )
+    vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
+
     yield vault
 
 

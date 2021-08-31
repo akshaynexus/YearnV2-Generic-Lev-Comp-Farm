@@ -1,21 +1,24 @@
 import pytest
 from brownie import Wei, config
-
+from tests.commonconf import daiAddr, wethAddr, usdcAddr, compAddr, crDaiAddr, cdaiAddr, usdcAccAddr, daiAccAddr
 
 # change these fixtures for generic tests
 @pytest.fixture
 def currency(dai):
-    # this one is dai:
     yield dai
-    # this one is weth:
-    # yield interface.ERC20('0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2')
 
 
 @pytest.fixture
-def vault(gov, rewards, guardian, currency, pm, Vault):
-
+def vault(gov, rewards, guardian, currency, Vault):
     vault = gov.deploy(Vault)
-    vault.initialize(currency, gov, rewards, "", "", guardian)
+    vault.initialize(
+        currency,
+        gov,
+        rewards,
+        "",
+        "",
+        guardian
+    )
     vault.setDepositLimit(2 ** 256 - 1, {"from": gov})
 
     yield vault
@@ -34,7 +37,7 @@ def Vault(pm):
 @pytest.fixture
 def weth(interface):
 
-    yield interface.ERC20("0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c")
+    yield interface.ERC20(wethAddr)
 
 
 @pytest.fixture
@@ -46,29 +49,29 @@ def strategy_changeable(YearnWethCreamStratV2, YearnDaiCompStratV2):
 @pytest.fixture
 def whale(accounts, web3, weth, dai, usdc, gov, chain):
     # big binance7 wallet
-    # acc = accounts.at('0xBE0eB53F46cd790Cd13851d5EFf43D12404d33E8', force=True)
+    # daiWhale = accounts.at('0xBE0eB53F46cd790Cd13851d5EFf43D12404d33E8', force=True)
     # big binance8 wallet
-    acc2 = accounts.at("0xF977814e90dA44bFA03b6295A0616a897441aceC", force=True)
+    usdcWhale = accounts.at(usdcAccAddr, force=True)
 
-    acc = accounts.at("0x631Fc1EA2270e98fbD9D92658eCe0F5a269Aa161", force=True)
-    usdc.transfer(acc, usdc.balanceOf(acc2), {"from": acc2})
+    daiWhale = accounts.at(daiAccAddr, force=True)
+    usdc.transfer(daiWhale, usdc.balanceOf(usdcWhale), {"from": usdcWhale})
     # lots of weth account
     # if weth transfer fails change to new weth account
     # wethAcc = accounts.at('0x1840c62fD7e2396e470377e6B2a833F3A1E96221', force=True)
 
-    # weth.transfer(acc, weth.balanceOf(wethAcc),{"from": wethAcc} )
+    # weth.transfer(daiWhale, weth.balanceOf(wethAcc),{"from": wethAcc} )
 
     # wethDeposit = 100 *1e18
     daiDeposit = 10000 * 1e18
 
-    # assert weth.balanceOf(acc)  > wethDeposit
-    assert dai.balanceOf(acc) > daiDeposit
+    # assert weth.balanceOf(daiWhale)  > wethDeposit
+    assert dai.balanceOf(daiWhale) > daiDeposit
 
-    # weth.transfer(gov, wethDeposit,{"from": acc} )
-    dai.transfer(gov, daiDeposit, {"from": acc})
-
-    #  assert  weth.balanceOf(acc) > 0
-    yield acc
+    # weth.transfer(gov, wethDeposit,{"from": daiWhale} )
+    dai.transfer(gov, daiDeposit, {"from": daiWhale})
+    print(dai.balanceOf(daiWhale) / 1e18)
+    #  assert  weth.balanceOf(daiWhale) > 0
+    yield daiWhale
 
 
 @pytest.fixture()
@@ -107,12 +110,12 @@ def rando(accounts):
 
 @pytest.fixture
 def dai(interface):
-    yield interface.ERC20("0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3")
+    yield interface.ERC20(daiAddr)
 
 
 @pytest.fixture
 def usdc(interface):
-    yield interface.ERC20("0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d")
+    yield interface.ERC20(usdcAddr)
 
 
 # any strategy just deploys base strategy can be used because they have the same interface
@@ -236,7 +239,7 @@ def live_strategy_weth(YearnWethCreamStratV2):
 
 @pytest.fixture
 def dai(interface):
-    yield interface.ERC20("0x1AF3F329e8BE154074D8769D1FFa4eE058B1DBc3")
+    yield interface.ERC20(daiAddr)
 
 
 # uniwethwbtc
@@ -257,16 +260,16 @@ def earlyadopter(accounts):
 
 @pytest.fixture
 def comp(interface):
-    yield interface.ERC20("0x4437743ac02957068995c48E08465E0EE1769fBE")
+    yield interface.ERC20(compAddr)
 
 
 @pytest.fixture
 def cdai(interface):
-    yield interface.CErc20I("0x5F30fDDdCf14a0997a52fdb7D7F23b93F0f21998")
+    yield interface.CErc20I(cdaiAddr)
 
 @pytest.fixture
 def crdai(interface):
-    yield interface.CErc20I("0x9095e8d707E40982aFFce41C61c10895157A1B22")
+    yield interface.CErc20I(crDaiAddr)
 
 # @pytest.fixture(autouse=True)
 # def isolation(fn_isolation):
@@ -286,27 +289,11 @@ def live_gov(accounts):
     yield accounts.at("0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52", force=True)
 
 
-# uniswap weth/wbtc
-@pytest.fixture()
-def whaleU(accounts, history, web3, shared_setup):
-    acc = accounts.at("0xf2d373481e1da4a8ca4734b28f5a642d55fda7d3", force=True)
-    yield acc
-
 
 @pytest.fixture
 def rando(accounts):
     yield accounts[9]
 
-
-@pytest.fixture()
-def seededvault(vault, dai, rando):
-    # Make it so vault has some AUM to start
-    amount = Wei("10000 ether")
-    token.approve(vault, amount, {"from": rando})
-    vault.deposit(amount, {"from": rando})
-    assert token.balanceOf(vault) == amount
-    assert vault.totalDebt() == 0  # No connected strategies yet
-    yield vault
 
 
 @pytest.fixture(autouse=True)
@@ -330,7 +317,7 @@ def strategy(strategist, gov, keeper, vault, Strategy, cdai, crdai):
 @pytest.fixture()
 def largerunningstrategy(gov, strategy, dai, vault, whale):
 
-    amount = Wei("499000 ether")
+    amount = dai.balanceOf(whale) - Wei('1000 ether')
     dai.approve(vault, amount, {"from": whale})
     vault.deposit(amount, {"from": whale})
 
@@ -347,6 +334,7 @@ def largerunningstrategy(gov, strategy, dai, vault, whale):
 
 @pytest.fixture()
 def enormousrunningstrategy(gov, largerunningstrategy, dai, vault, whale):
+    assert dai.balanceOf(whale) > 0
     dai.approve(vault, dai.balanceOf(whale), {"from": whale})
     vault.deposit(dai.balanceOf(whale), {"from": whale})
 

@@ -22,7 +22,7 @@ def test_sweep(web3, strategy, dai, cdai, gov, comp):
     with brownie.reverts("!protected"):
         strategy.sweep(cdai, {"from": gov})
 
-    randomToken = "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+    randomToken = "0x328A7b4d538A2b3942653a9983fdA3C12c571141"
 
     strategy.sweep(randomToken, {"from": gov})
 

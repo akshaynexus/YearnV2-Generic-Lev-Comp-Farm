@@ -38,30 +38,28 @@ contract Strategy is BaseStrategy {
 
 
     // Comptroller address for fortress
-    FortressComptrollerI public constant fortressController = FortressComptrollerI(0x67340Bd16ee5649A37015138B3393Eb5ad17c195);
-    //Flash Loan Providers
-    ComptrollerI public constant creamComptroller = ComptrollerI(0x589DE0F0Ccf905477646599bb3E5C622C84cC0BA);
+    ComptrollerI public constant screamController = ComptrollerI(0x260E596DAbE3AFc463e75B6CC05d8c46aCAcFB09);
 
     //Only three tokens we use
-    address public constant fts = address(0x4437743ac02957068995c48E08465E0EE1769fBE);
+    address public constant scream = address(0xe0654C8e6fd4D733349ac7E09f6f23DA256bF475);
     CErc20I public cToken;
     //address public constant DAI = address(0x6B175474E89094C44Da98b954EedeAC495271d0F);
 
-    address public constant pancakeswapRouter = address(0x10ED43C718714eb63d5aA57B78B54704E256024E);
-    address public constant wbnb = address(0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c);
+    address public constant router = address(0xF491e7B69E4244ad4002BC14e878a34207E38c29);
+    address public constant wftm = address(0x21be370D5312f44cB42ce377BC9b8a0cEF1A4C83);
 
     //Operating variables
-    uint256 public collateralTarget = 0.57 ether; // 57%
+    uint256 public collateralTarget = 0.72 ether; // 72%
 
-    //This is calculated with avg 3 Second blocktime on BSC
-    uint256 public blocksToLiquidationDangerZone = 201600; // 7 days =  60*60*24*7/3
+    //This is calculated with avg 1 Second blocktime on FTM
+    uint256 public blocksToLiquidationDangerZone = 604800; // 7 days =  60*60*24*7/3
 
     uint256 public minWant = 0; //Only lend if we have enough want to be worth it. Can be set to non-zero
     uint256 public minCompToSell = 0.1 ether; //used both as the threshold to sell but also as a trigger for harvest
 
     //To deactivate flash loan provider if needed
-    //We have no dydx on BSC Yet,so disable it,we instead use a workaround with cream
-    bool public CreamActive;
+    //We have no dydx on FTM Yet,so disable it,we instead use a workaround with cream
+    bool public CreamActive = false;
 
     CTokenWithFlashloan public creamLoanToken;
 
@@ -70,7 +68,7 @@ contract Strategy is BaseStrategy {
 
         require(address(want) == cToken.underlying() ,"Wrong ctoken");
         //pre-set approvals
-        IERC20(fts).safeApprove(pancakeswapRouter, uint256(-1));
+        IERC20(scream).safeApprove(router, uint256(-1));
         want.safeApprove(address(cToken), uint256(-1));
 
         // You can set these parameters on deployment to whatever you want
@@ -83,15 +81,15 @@ contract Strategy is BaseStrategy {
     }
 
     function name() external view override returns (string memory) {
-        return "StrategyGenericLevCompFarm";
+        return "StrategyGenericLevScreamFarm";
     }
 
     /*
      * Control Functions
      */
 
-    function setAave(bool _ave) external management {
-        CreamActive = _ave;
+    function setCreamFlash(bool _on) external management {
+        CreamActive = _on;
     }
 
     function setMinCompToSell(uint256 _minCompToSell) external management {
@@ -107,7 +105,7 @@ contract Strategy is BaseStrategy {
     }
 
     function setCollateralTarget(uint256 _collateralTarget) external management {
-        (, uint256 collateralFactorMantissa, ) = fortressController.markets(address(cToken));
+        (, uint256 collateralFactorMantissa, ) = screamController.markets(address(cToken));
         require(collateralFactorMantissa > _collateralTarget, "!dangerous collateral");
         collateralTarget = _collateralTarget;
     }
@@ -123,10 +121,10 @@ contract Strategy is BaseStrategy {
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
 
         uint256 _claimableComp = predictCompAccrued();
-        uint256 currentComp = IERC20(fts).balanceOf(address(this));
+        uint256 currentComp = IERC20(scream).balanceOf(address(this));
 
         // Use touch price. it doesnt matter if we are wrong as this is not used for decision making
-        uint256 estimatedWant = priceCheck(fts, address(want), _claimableComp.add(currentComp));
+        uint256 estimatedWant = priceCheck(scream, address(want), _claimableComp.add(currentComp));
         uint256 conservativeWant = estimatedWant.mul(9).div(10); //10% pessimist
 
         return want.balanceOf(address(this)).add(deposits).add(conservativeWant).sub(borrows);
@@ -175,15 +173,15 @@ contract Strategy is BaseStrategy {
         // Should not trigger if strategy is not activated
         if (params.activation == 0) return false;
 
-        uint256 wantGasCost = priceCheck(wbnb, address(want), gasCost);
-        uint256 compGasCost = priceCheck(wbnb, fts, gasCost);
+        uint256 wantGasCost = priceCheck(wftm, address(want), gasCost);
+        uint256 compGasCost = priceCheck(wftm, scream, gasCost);
 
-        // after enough fts has accrued we want the bot to run
+        // after enough scream has accrued we want the bot to run
         uint256 _claimableComp = predictCompAccrued();
 
         if (_claimableComp > minCompToSell) {
             // check value of COMP in wei
-            if (_claimableComp.add(IERC20(fts).balanceOf(address(this))) > compGasCost.mul(profitFactor)) {
+            if (_claimableComp.add(IERC20(scream).balanceOf(address(this))) > compGasCost.mul(profitFactor)) {
                 return true;
             }
         }
@@ -216,18 +214,18 @@ contract Strategy is BaseStrategy {
             return 0;
         }
         address[] memory path;
-        if (start == wbnb) {
+        if (start == wftm) {
             path = new address[](2);
-            path[0] = wbnb;
+            path[0] = wftm;
             path[1] = end;
         } else {
             path = new address[](3);
             path[0] = start;
-            path[1] = wbnb;
+            path[1] = wftm;
             path[2] = end;
         }
 
-        uint256[] memory amounts = IUni(pancakeswapRouter).getAmountsOut(_amount, path);
+        uint256[] memory amounts = IUni(router).getAmountsOut(_amount, path);
 
         return amounts[amounts.length - 1];
     }
@@ -241,7 +239,7 @@ contract Strategy is BaseStrategy {
     //equation. Compound doesn't include compounding for most blocks
     //((deposits*colateralThreshold - borrows) / (borrows*borrowrate - deposits*colateralThreshold*interestrate));
     function getblocksUntilLiquidation() public view returns (uint256) {
-        (, uint256 collateralFactorMantissa, ) = fortressController.markets(address(cToken));
+        (, uint256 collateralFactorMantissa, ) = screamController.markets(address(cToken));
 
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
 
@@ -265,16 +263,16 @@ contract Strategy is BaseStrategy {
         }
     }
 
-    // This function makes a prediction on how much fts is accrued
+    // This function makes a prediction on how much scream is accrued
     // It is not 100% accurate as it uses current balances in Compound to predict into the past
     function predictCompAccrued() public view returns (uint256) {
         (uint256 deposits, uint256 borrows) = getCurrentPosition();
         if (deposits == 0) {
-            return 0; // should be impossible to have 0 balance and positive fts accrued
+            return 0; // should be impossible to have 0 balance and positive scream accrued
         }
 
-        //fts speed is amount to borrow or deposit (so half the total distribution for want)
-        uint256 distributionPerBlock = fortressController.fortressSpeeds(address(cToken));
+        //scream speed is amount to borrow or deposit (so half the total distribution for want)
+        uint256 distributionPerBlock = screamController.compSpeeds(address(cToken));
 
         uint256 totalBorrow = cToken.totalBorrows();
 
@@ -332,9 +330,9 @@ contract Strategy is BaseStrategy {
     /*
      * A core method.
      * Called at beggining of harvest before providing report to owner
-     * 1 - claim accrued fts
+     * 1 - claim accrued scream
      * 2 - if enough to be worth it we sell
-     * 3 - because we lose money on our loans we need to offset profit from fts.
+     * 3 - because we lose money on our loans we need to offset profit from scream.
      */
     function prepareReturn(uint256 _debtOutstanding)
         internal
@@ -358,9 +356,9 @@ contract Strategy is BaseStrategy {
         }
         (uint256 deposits, uint256 borrows) = getLivePosition();
 
-        //claim fts accrued
+        //claim scream accrued
         claimComp();
-        //sell fts
+        //sell scream
         _disposeOfComp();
 
         uint256 wantBalance = want.balanceOf(address(this));
@@ -383,7 +381,7 @@ contract Strategy is BaseStrategy {
                 _debtPayment = wantBalance - _profit;
             }
         } else {
-            //we will lose money until we claim fts then we will make money
+            //we will lose money until we claim scream then we will make money
             //this has an unintended side effect of slowly lowering our total debt allowed
             _loss = debt - balance;
             _debtPayment = Math.min(wantBalance, _debtOutstanding);
@@ -483,8 +481,8 @@ contract Strategy is BaseStrategy {
             cToken.redeemUnderlying(_amount);
         }
 
-        //let's sell some fts if we have more than needed
-        //flash loan would have sent us fts if we had some accrued so we don't need to call claim fts
+        //let's sell some scream if we have more than needed
+        //flash loan would have sent us scream if we had some accrued so we don't need to call claim scream
         _disposeOfComp();
     }
 
@@ -579,20 +577,20 @@ contract Strategy is BaseStrategy {
         CTokenI[] memory tokens = new CTokenI[](1);
         tokens[0] = cToken;
 
-        fortressController.claimFortress(address(this), tokens);
+        screamController.claimComp(address(this), tokens);
     }
 
-    //sell fts function
+    //sell scream function
     function _disposeOfComp() internal {
-        uint256 _comp = IERC20(fts).balanceOf(address(this));
+        uint256 _comp = IERC20(scream).balanceOf(address(this));
 
         if (_comp > minCompToSell) {
             address[] memory path = new address[](3);
-            path[0] = fts;
-            path[1] = wbnb;
+            path[0] = scream;
+            path[1] = wftm;
             path[2] = address(want);
 
-            IUni(pancakeswapRouter).swapExactTokensForTokens(_comp, uint256(0), path, address(this), now);
+            IUni(router).swapExactTokensForTokens(_comp, uint256(0), path, address(this), now);
         }
     }
 
@@ -606,7 +604,7 @@ contract Strategy is BaseStrategy {
 
         require(borrowBalance == 0, "DELEVERAGE_FIRST");
 
-        IERC20 _comp = IERC20(fts);
+        IERC20 _comp = IERC20(scream);
         uint256 _compB = _comp.balanceOf(address(this));
         if (_compB > 0) {
             _comp.safeTransfer(_newStrategy, _compB);
@@ -625,7 +623,7 @@ contract Strategy is BaseStrategy {
             return 0;
         }
 
-        (, uint256 collateralFactorMantissa, ) = fortressController.markets(address(cToken));
+        (, uint256 collateralFactorMantissa, ) = screamController.markets(address(cToken));
 
         if (deficit) {
             amount = _normalDeleverage(max, lent, borrowed, collateralFactorMantissa);
@@ -712,7 +710,7 @@ contract Strategy is BaseStrategy {
     function protectedTokens() internal view override returns (address[] memory) {
         //want is protected automatically
         address[] memory protected = new address[](2);
-        protected[0] = fts;
+        protected[0] = scream;
         protected[1] = address(cToken);
         return protected;
     }
